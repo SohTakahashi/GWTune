@@ -221,6 +221,7 @@ class VisualizationConfig:
         lim_acc: Optional[float] = None,
         edgecolor:Optional[str] = None,
         linewidth:Optional[int] = None,
+        transparent:bool = False,
     ) -> None:
         """Initializes the VisualizationConfig class with specified visualization parameters.
 
@@ -319,6 +320,8 @@ class VisualizationConfig:
                 Color of the edge. Defaults to None.
             linewidth (Optional[int], optional):
                 Width of the line for the edge of plot. Defaults to None.
+            transparent (bool, optional):
+                Whether to make the figure transparent. Defaults to False.
         """
 
         self.visualization_params = {
@@ -373,6 +376,7 @@ class VisualizationConfig:
             'lim_acc':lim_acc,
             'edgecolor':edgecolor,
             'linewidth':linewidth,
+            'transparent':transparent,
         }
 
     def __call__(self) -> Dict[str, Any]:

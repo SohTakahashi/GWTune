@@ -332,6 +332,7 @@ def plot_embedding(
     alpha = kwargs.get('alpha', 1)
     fig_ext = kwargs.get('fig_ext', "png")
     dpi = kwargs.get('dpi', 300)
+    transparent = kwargs.get('transparent', False)
     
     if color_labels is None:
 
@@ -458,7 +459,7 @@ def plot_embedding(
     
     if fig_dir is not None:
         fig_path = os.path.join(fig_dir, f"{fig_name}.{fig_ext}")
-        plt.savefig(fig_path, dpi=dpi, bbox_inches='tight')
+        plt.savefig(fig_path, dpi=dpi, bbox_inches='tight', transparent=transparent)
 
     if show_figure:
         plt.show()
