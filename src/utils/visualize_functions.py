@@ -455,6 +455,10 @@ def plot_embedding(
         cbar.ax.tick_params(labelsize=xlabel_size)
         cbar.mappable.set_clim(colorbar_range[0], colorbar_range[1])
 
+    if transparent:
+        fig.patch.set_facecolor('none')
+        ax.set_facecolor('none')
+
     plt.tight_layout()
     
     if fig_dir is not None:
