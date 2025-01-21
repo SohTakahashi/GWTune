@@ -68,23 +68,23 @@ def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
     return points + noise
 
 #%%
-main_compute = True
+main_compute = False
 main_visualize = True
 
 # GWOT parameters
 eps_list = [1e-3, 1e-1]
 num_trial = 100
 
-compute_OT = True
-delete_results = True
+compute_OT = False
+delete_results = False
 
 # optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 # Parameters for starfish generation
 n_points = 100  # Total number of points
-sym_deg_list = np.linspace(0, 1, 11)
-noise_deg_list = np.linspace(0, 1, 11)
-sym_sample = 20
+sym_deg_list = np.linspace(0, 1, 6)
+noise_deg_list = np.linspace(0, 1, 6)
+sym_sample = 4
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
@@ -133,7 +133,19 @@ vis_log = VisualizationConfig(
 
 
 # %%
-def run_starfish_experiment(shape1, shape2_one_noise, sampler, initialization, main_results_dir):
+def run_starfish_experiment(
+    shape1, 
+    shape2_one_noise, 
+    sampler_init,
+    sym_deg,
+    noise_deg,
+    seed_idx,
+):
+    
+    # define the main results directory and the representation names
+    initialization, sampler = sampler_init.split("_")
+    main_results_dir = f"../results/simulation_starfish/{sampler_init}"
+    
     # Create representations
     rep1 = Representation(name=f"shape1_sym{sym_deg:.3f}_noise{noise_deg:.3f}_seed{seed_idx}", metric="euclidean", embedding=shape1)
     rep2 = Representation(name=f"shape2_sym{sym_deg:.3f}_noise{noise_deg:.3f}_seed{seed_idx}", metric="euclidean", embedding=shape2_one_noise)
@@ -171,85 +183,90 @@ def run_starfish_experiment(shape1, shape2_one_noise, sampler, initialization, m
     alignment.RSA_get_corr(metric="pearson")
 
     # GW
-    alignment.gw_alignment(
-        compute_OT=compute_OT,
-        delete_results=delete_results,
-        visualization_config=vis_config_ot,
-        fig_dir=f"{fig_dir}/{sampler}_{initialization}",
-        delete_confirmation=False
-    )
+    data_path = f"{main_results_dir}/{alignment.data_name}_{rep1.name}_vs_{rep2.name}/*/data/*.npy"
+    npy_list = glob.glob(data_path)
+    
+    if len(npy_list) >= num_trial:
+        print(f"{alignment.data_name} was already computed.")
+        
+    else:
+        alignment.gw_alignment(
+            compute_OT=compute_OT,
+            delete_results=delete_results,
+            visualization_config=vis_config_ot,
+            fig_dir=f"{fig_dir}/{sampler}_{initialization}",
+            delete_confirmation=False
+        )
 
-    alignment.show_optimization_log(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_log)
+        alignment.show_optimization_log(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_log)
 
 #%%
-if main_compute:
-    for seed_idx in tqdm(range(sym_sample)):
-        for sym_deg in sym_deg_list:
-            # Generate starfish shapes
-            shape1 = create_starfish_3d_fixed_width_clean(num_arms=5, sym_deg=sym_deg, n_points=n_points, seed_idx=seed_idx)
+def main_test(seed_idx, sym_deg_list, noise_deg_list):
+    for sym_deg in sym_deg_list:
+        # Generate starfish shapes
+        shape1 = create_starfish_3d_fixed_width_clean(num_arms=5, sym_deg=sym_deg, n_points=n_points, seed_idx=seed_idx)
+
+        for noise_deg in noise_deg_list:    
+            shape2_one_noise = add_noise_to_one_dimension(shape1, noise_deg=noise_deg, dimension=0)
+
+            # Visualize the shapes
+            fig = plt.figure(figsize=(10, 4))
+
+            # Shape 1
+            ax1 = fig.add_subplot(121, projection='3d')
+            ax1.scatter(shape1[:, 0], shape1[:, 1], shape1[:, 2], c='b', label='Shape 1')
+            ax1.set_title("Shape 1 (Original Starfish)")
+            ax1.set_xlabel("X")
+            ax1.set_ylabel("Y")
+            ax1.set_zlabel("Z")
+            ax1.legend()
+
+            # Shape 2 with noise in one dimension
+            ax2 = fig.add_subplot(122, projection='3d')
+            ax2.scatter(shape2_one_noise[:, 0], shape2_one_noise[:, 1], shape2_one_noise[:, 2], c='r', label='Shape 2 (One Dimension Noise)')
+            ax2.set_title("Shape 2 (One Dimension Noise)")
+            ax2.set_xlabel("X")
+            ax2.set_ylabel("Y")
+            ax2.set_zlabel("Z")
+            ax2.legend()
+
+            plt.tight_layout()
             
-            for noise_deg in noise_deg_list:    
-                shape2_one_noise = add_noise_to_one_dimension(shape1, noise_deg=noise_deg, dimension=0)
+            raw_save_fig_dir = f"../results/figs/simulation_Starfish/raw"
+            os.makedirs(raw_save_fig_dir, exist_ok=True)
+            plt.savefig(f"{raw_save_fig_dir}/{n_points}_points_sym{sym_deg:3f}_noise{noise_deg:3f}_seed{seed_idx}.png")
+            plt.close()
+            
+            pool = ProcessPoolExecutor(len(sampler_initilizations))
+            
+            with pool:
+                processes = []
+                for _, sampler_init in enumerate(sampler_initilizations):                    
+                    future = pool.submit(
+                        run_starfish_experiment,
+                        shape1=shape1,
+                        shape2_one_noise=shape2_one_noise,
+                        sampler_init=sampler_init,
+                        sym_deg=sym_deg,
+                        noise_deg=noise_deg,
+                        seed_idx=seed_idx,
+                    )
 
-                # Visualize the shapes
-                fig = plt.figure(figsize=(10, 4))
+                    processes.append(future)
 
-                # Shape 1
-                ax1 = fig.add_subplot(121, projection='3d')
-                ax1.scatter(shape1[:, 0], shape1[:, 1], shape1[:, 2], c='b', label='Shape 1')
-                ax1.set_title("Shape 1 (Original Starfish)")
-                ax1.set_xlabel("X")
-                ax1.set_ylabel("Y")
-                ax1.set_zlabel("Z")
-                ax1.legend()
+                for future in as_completed(processes):
+                    future.result()
 
-                # Shape 2 with noise in one dimension
-                ax2 = fig.add_subplot(122, projection='3d')
-                ax2.scatter(shape2_one_noise[:, 0], shape2_one_noise[:, 1], shape2_one_noise[:, 2], c='r', label='Shape 2 (One Dimension Noise)')
-                ax2.set_title("Shape 2 (One Dimension Noise)")
-                ax2.set_xlabel("X")
-                ax2.set_ylabel("Y")
-                ax2.set_zlabel("Z")
-                ax2.legend()
+# %%
+if main_compute:
+    n_jobs = 3
+    main_pool = ProcessPoolExecutor(n_jobs)
+    
+    with main_pool:
+        processes = [main_pool.submit(main_test, seed_idx, sym_deg_list, noise_deg_list) for seed_idx in range(sym_sample)] 
 
-                plt.tight_layout()
-                
-                raw_save_fig_dir = f"../results/figs/simulation_Starfish/raw"
-                os.makedirs(raw_save_fig_dir, exist_ok=True)
-                plt.savefig(f"{raw_save_fig_dir}/{n_points}_points_sym{sym_deg:3f}_noise{noise_deg:3f}_seed{seed_idx}.png")
-                plt.close()
-                
-                pool = ProcessPoolExecutor(len(sampler_initilizations))
-                
-                with pool:
-                    processes = []
-                    for idx, sampler_init in enumerate(sampler_initilizations):
-                        if "random" in sampler_init:
-                            initialization = "random"
-                        elif "uniform" in sampler_init:
-                            initialization = "uniform"
-
-                        if "tpe" in sampler_init:
-                            sampler = "tpe"
-                        elif "grid" in sampler_init:
-                            sampler = "grid"
-                        
-                        main_results_dir = f"../results/simulation_starfish/{sampler_init}"
-                        
-                        future = pool.submit(
-                            run_starfish_experiment,
-                            shape1=shape1,
-                            shape2_one_noise=shape2_one_noise,
-                            sampler=sampler,
-                            initialization=initialization,
-                            main_results_dir=main_results_dir,
-                        )
-
-                        processes.append(future)
-
-                    for future in as_completed(processes):
-                        future.result()
-
+        for future in tqdm(as_completed(processes, total=sym_sample, desc="Seed_idx", leave=True)):
+            future.result()
                     
 # %%
 def get_result_from_database(n_points, sym_deg, noise_deg, seed_idx, main_results_dir):
@@ -329,12 +346,13 @@ if main_visualize:
         plt.imshow(mean_gwd_result, cmap='viridis')
         plt.colorbar()
         
-        plt.ylabel("Symmetry Degree")
-        plt.yticks(ticks=np.arange(len(sym_deg_list)), labels=sym_deg_list)
-        
         plt.xlabel("Noise Degree")
-        plt.xticks(ticks=np.arange(len(noise_deg_list)), labels=noise_deg_list, rotation=45)
-        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'{x:.3f}'))
+        plt.ylabel("Symmetry Degree")
+        
+        plt.gca().set_xticks(np.arange(len(noise_deg_list)))
+        plt.gca().set_xticklabels([f"{x:.2f}" for x in noise_deg_list], rotation=45)
+        plt.gca().set_yticks(np.arange(len(sym_deg_list)))
+        plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
         plt.savefig(f"../results/figs/simulation_Starfish/mean_min_gwds_{sampler_init}.png")
@@ -345,12 +363,13 @@ if main_visualize:
         plt.imshow(mean_min_indices, cmap='viridis')
         plt.colorbar()
         
-        plt.ylabel("Symmetry Degree")
-        plt.yticks(ticks=np.arange(len(sym_deg_list)), labels=sym_deg_list)
-        
         plt.xlabel("Noise Degree")
-        plt.xticks(ticks=np.arange(len(noise_deg_list)), labels=noise_deg_list, rotation=45)
-        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'{x:.3f}'))
+        plt.ylabel("Symmetry Degree")
+        
+        plt.gca().set_xticks(np.arange(len(noise_deg_list)))
+        plt.gca().set_xticklabels([f"{x:.2f}" for x in noise_deg_list], rotation=45)
+        plt.gca().set_yticks(np.arange(len(sym_deg_list)))
+        plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
         plt.savefig(f"../results/figs/simulation_Starfish/mean_min_indices_{sampler_init}.png")
@@ -361,12 +380,13 @@ if main_visualize:
         plt.imshow(mean_acc, cmap='viridis')
         plt.colorbar()
         
-        plt.ylabel("Symmetry Degree")
-        plt.yticks(ticks=np.arange(len(sym_deg_list)), labels=sym_deg_list)
-        
         plt.xlabel("Noise Degree")
-        plt.xticks(ticks=np.arange(len(noise_deg_list)), labels=noise_deg_list, rotation=45)
-        plt.gca().yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, _: f'{x:.3f}'))
+        plt.ylabel("Symmetry Degree")
+        
+        plt.gca().set_xticks(np.arange(len(noise_deg_list)))
+        plt.gca().set_xticklabels([f"{x:.2f}" for x in noise_deg_list], rotation=45)
+        plt.gca().set_yticks(np.arange(len(sym_deg_list)))
+        plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
         plt.savefig(f"../results/figs/simulation_Starfish/mean_acc_{sampler_init}.png")
