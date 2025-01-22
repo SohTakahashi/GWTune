@@ -25,7 +25,7 @@ num_trial = 100
 
 # Parameters
 n_points = 20  # Total number of points
-rot_deg_list = np.arange(2, 6) # Rotation degrees
+rot_deg_list = np.arange(1, 7) # Rotation degrees
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
@@ -238,6 +238,19 @@ def get_result_from_database(n_points, rot_deg, main_results_dir):
     
     return study
 
+#%%
+def get_ot(n_points, rot_deg, main_results_dir, min_index):
+    shape1_name = f"shape1"
+    shape2_name = f"shape2_rot_π-{rot_deg:.2f}"
+    
+    data_name = f"circle_{n_points}_points_{shape1_name}_vs_{shape2_name}"
+    
+    npy_path = glob.glob(f"{main_results_dir}/{data_name}/*/data/gw_{min_index}.npy")[0]
+    
+    ot = np.load(npy_path)
+    
+    return ot
+    
 
 # %%
 if main_compute:
@@ -258,6 +271,7 @@ if main_visualize:
     for rot_deg in rot_deg_list:
         plt.figure(figsize=(10, 10))
         
+        min_values = []
         for sampler_init in sampler_initilizations:
             main_results_dir = f"../results/circle/{sampler_init}"
             study = get_result_from_database(n_points, rot_deg, main_results_dir)
@@ -271,10 +285,30 @@ if main_visualize:
             plt.title(f"{sampler_init} (π/{int(rot_deg)})")
             plt.colorbar()
             plt.grid(True)
+            
+            min_value = df.index[df["value"] == df["value"].min()]
+            min_values.append(min_value[0])
         
         plt.tight_layout()
         
-        plt.savefig(f"../results/figs/circle/{n_points}_points_rot_π-{rot_deg:.2f}_GWD.png")
+        plt.savefig(f"../results/figs/circle/main_fig/comparison_log_π-{int(rot_deg)}.png")
         plt.close()
         
+        plt.figure(figsize=(10,4))
+        for i, sampler_init in enumerate(sampler_initilizations):
+            main_results_dir = f"../results/circle/{sampler_init}"
+            ot = get_ot(n_points, rot_deg, main_results_dir, min_values[i])
+            
+            plt.subplot(1, 3, i + 1)
+            plt.imshow(ot, cmap="rocket_r")
+
+            plt.xlabel(f"{n_points} points")
+            plt.ylabel(f"{n_points} points")
+            plt.title(f"OT {sampler_init} (π/{int(rot_deg)})")
+            plt.colorbar(shrink=0.6)
+            plt.grid(True)
+        
+        plt.tight_layout()
+        plt.savefig(f"../results/figs/circle/main_fig/comparison_ot_π-{int(rot_deg)}.png")
+        plt.close()
 # %%
