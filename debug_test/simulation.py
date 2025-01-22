@@ -10,6 +10,8 @@ import glob
 from tqdm.auto import tqdm
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from src.align_representations import Representation, AlignRepresentations, OptimizationConfig, VisualizationConfig
+import pandas as pd
+import seaborn as sns
 
 #%%
 def create_starfish_3d_fixed_width_clean(num_arms=5, sym_deg=0.0, n_points=100, arm_length=1.0, arm_width=0.2, seed_idx=0):
@@ -84,7 +86,7 @@ delete_results = False
 n_points = 100  # Total number of points
 sym_deg_list = np.linspace(0, 1, 6)
 noise_deg_list = np.linspace(0, 1, 6)
-sym_sample = 4
+sym_sample = 8
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
@@ -331,6 +333,11 @@ if main_visualize:
     acc = np.array(acc).reshape(len(sampler_initilizations), sym_sample, len(sym_deg_list), len(noise_deg_list))
 
     #%%
+    os.makedirs("../results/figs/simulation_Starfish/main_result_fig/heatmap", exist_ok=True)
+    os.makedirs("../results/figs/simulation_Starfish/main_result_fig/plot", exist_ok=True)
+    os.makedirs("../results/figs/simulation_Starfish/main_result_fig/scatter", exist_ok=True)
+    
+    #%%
     for sampler_init in sampler_initilizations:
         gwd_result = min_values[sampler_initilizations.index(sampler_init), :, :, :]
         mean_gwd_result = np.mean(gwd_result, axis=0)
@@ -355,7 +362,7 @@ if main_visualize:
         plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
-        plt.savefig(f"../results/figs/simulation_Starfish/mean_min_gwds_{sampler_init}.png")
+        plt.savefig(f"../results/figs/simulation_Starfish/main_result_fig/heatmap/mean_min_gwds_{sampler_init}.png")
         plt.close()
         
         plt.figure()
@@ -372,7 +379,7 @@ if main_visualize:
         plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
-        plt.savefig(f"../results/figs/simulation_Starfish/mean_min_indices_{sampler_init}.png")
+        plt.savefig(f"../results/figs/simulation_Starfish/main_result_fig/heatmap/mean_min_indices_{sampler_init}.png")
         plt.close()
         
         plt.figure()
@@ -389,28 +396,33 @@ if main_visualize:
         plt.gca().set_yticklabels([f"{y:.2f}" for y in sym_deg_list])
         
         plt.tight_layout()
-        plt.savefig(f"../results/figs/simulation_Starfish/mean_acc_{sampler_init}.png")
+        plt.savefig(f"../results/figs/simulation_Starfish/main_result_fig/heatmap/mean_acc_{sampler_init}.png")
         plt.close()
-
     
     # %%
-    # plot the min_gwds for the fixed noise degree
     for noise_idx in range(len(noise_deg_list)):
-        plt.figure()
+        plt.figure(figsize=(10, 6))
         for sampler_init in sampler_initilizations:
             gwd_result = min_values[sampler_initilizations.index(sampler_init), :, :, noise_idx]
             
-            mean_gwd = np.mean(gwd_result, axis=0)
-            std_gwd = np.std(gwd_result, axis=0)
-            
-            plt.fill_between(sym_deg_list, mean_gwd + std_gwd, mean_gwd - std_gwd, alpha=0.2, color=f"C{sampler_initilizations.index(sampler_init)}")
-            plt.plot(sym_deg_list, mean_gwd, label=sampler_init, color=f"C{sampler_initilizations.index(sampler_init)}")
+            # for gwd in gwd_result:
+            #     plt.scatter(sym_deg_list, gwd, color=f"C{sampler_initilizations.index(sampler_init)}")
+            _df = pd.DataFrame(gwd_result)
+            _df.columns = [f"{y:.2f}" for y in sym_deg_list]
+            _df = _df.melt(var_name="Symmetry Degree", value_name="Min GWD")
+            sns.stripplot(data=_df, x = "Symmetry Degree", y="Min GWD", color=f"C{sampler_initilizations.index(sampler_init)}", size=10, dodge=True)
         
+        plt.scatter([], [], c="C0", label=sampler_initilizations[0])
+        plt.scatter([], [], c="C1", label=sampler_initilizations[1])
+        plt.scatter([], [], c="C2", label=sampler_initilizations[2])
         plt.xlabel("Symmetry Degree")
         plt.ylabel("Min GWD")
-        plt.title(f"Min GWDs for {sampler_init} with noise degree from {noise_deg_list[0]:.2f} to {noise_deg_list[-1]:.2f}")
+        
+        # plt.xticks([f"{y:.2f}" for y in sym_deg_list])
+        plt.title(f"Comparison of Min GWDs, (num of sampling : {sym_sample}, noise : {noise_deg_list[noise_idx]:.2f})")
         plt.tight_layout()
+        plt.grid(True)
         plt.legend()
-        plt.savefig(f"../results/figs/simulation_Starfish/min_gwds_noise{noise_deg:.2f}.png")
+        plt.savefig(f"../results/figs/simulation_Starfish/main_result_fig/scatter/min_gwds_noise{noise_deg_list[noise_idx]:.2f}_scatter.png")
         plt.close()
 # %%
