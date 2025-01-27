@@ -25,7 +25,8 @@ num_trial = 100
 
 # Parameters
 n_points = 20  # Total number of points
-rot_deg_list = np.arange(1, 7) # Rotation degrees
+rot_deg_list = [0, np.pi/4, np.pi/2] # Rotation degrees
+noise_deg_list = [0, 0.05, 0.1, 0.15, 0.2] # Noise degrees
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
@@ -91,6 +92,15 @@ def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
     noise[:, dimension] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[0])
     return points + noise
 
+def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
+    """
+    Adds Gaussian noise to all dimensions of a single point in the point cloud.
+    This is a sanity check to observe the effect of noise on a single point.
+    """
+    noise = np.zeros_like(points)
+    noise[point_index, :] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[1])
+    return points + noise
+
 #%%
 def create_circle_data(n_points):
     t = np.linspace(0, 2 * np.pi, n_points)
@@ -110,6 +120,7 @@ def run_starfish_experiment(
     shape2, 
     sampler_init,
     rot_deg:int,
+    noise_deg,
 ):
     # define the main results directory and the representation names
     initialization, sampler = sampler_init.split("_")
@@ -117,7 +128,7 @@ def run_starfish_experiment(
     
     # Create representations
     rep1 = Representation(name=f"shape1", metric="euclidean", embedding=shape1)
-    rep2 = Representation(name=f"shape2_rot_π-{rot_deg:.2f}", metric="euclidean", embedding=shape2)
+    rep2 = Representation(name=f"shape2_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}", metric="euclidean", embedding=shape2)
 
     config = OptimizationConfig(
         eps_list=eps_list,
@@ -163,72 +174,78 @@ def run_starfish_experiment(
             compute_OT=True,
             delete_results=False,
             visualization_config=vis_config_ot,
-            delete_confirmation=False
+            fix_random_init_seed=True,
+            sampler_seed=0,
+            delete_confirmation=False,
         )
         
         alignment.show_OT(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_config_ot)
         alignment.show_optimization_log(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_log)
 
 #%%
-def main_test(n_points, rot_deg:int):
-    shape1 = create_circle_data(n_points)
-    shape2 = rot_data(shape1, np.pi / rot_deg)
-    
-    # Visualize the shapes
-    fig = plt.figure(figsize=(10, 4))
+def main_test(n_points:int, noise_deg):
+    for rot_deg in rot_deg_list:
+        shape1 = create_circle_data(n_points)
+        # if rot_deg == 0:
+        #     shape2 = shape1
+        # else:
+        shape2 = rot_data(shape1, rot_deg)
+        shape2 = add_noise_to_one_point(shape2, noise_deg, point_index=0)
+        
+        # Visualize the shapes
+        fig = plt.figure(figsize=(10, 6))
 
-    rot_str = f"$\pi$/{rot_deg:.2f}"
-    # Shape 1
-    ax1 = fig.add_subplot(121)
-    ax1.axis("equal")
-    ax1.scatter(shape1[:, 0], shape1[:, 1], c="C0", label='Shape 1')
-    ax1.set_title("Shape 1 (Original Circle)")
-    ax1.set_xlabel("X")
-    ax1.set_ylabel("Y")
-    ax1.grid()
-    ax1.legend(loc="upper right")
+        # Shape 1
+        ax1 = fig.add_subplot(121)
+        ax1.axis("equal")
+        ax1.scatter(shape1[:, 0], shape1[:, 1], c="C0", label='Shape 1')
+        ax1.set_title("Shape 1 (Original Circle)")
+        ax1.set_xlabel("X")
+        ax1.set_ylabel("Y")
+        ax1.grid()
+        ax1.legend(loc="upper right")
 
-    # Shape 2
-    ax2 = fig.add_subplot(122)
-    ax2.axis("equal")
-    ax2.scatter(shape2[:, 0], shape2[:, 1], c="C1", label=f'Shape 2 (rot π/{rot_deg:.2f})')
-    ax2.set_title("Shape 2 (Rotated Circle)")
-    ax2.set_xlabel("X")
-    ax2.set_ylabel("Y")
-    ax2.grid()
-    ax2.legend(loc="upper right")
+        # Shape 2
+        ax2 = fig.add_subplot(122)
+        ax2.axis("equal")
+        ax2.scatter(shape2[:, 0], shape2[:, 1], c="C1", label=f'Shape 2 (rot {rot_deg:.2f}, noise {noise_deg:.2f})')
+        ax2.set_title("Shape 2 (Rotated Circle)")
+        ax2.set_xlabel("X")
+        ax2.set_ylabel("Y")
+        ax2.grid()
+        ax2.legend(loc="upper right")
 
-    plt.tight_layout()
-    
-    raw_save_fig_dir = f"../results/figs/circle/raw"
-    os.makedirs(raw_save_fig_dir, exist_ok=True)
-    plt.savefig(f"{raw_save_fig_dir}/{n_points}_points_rot_π-{rot_deg:.2f}.png") # 例えば、π/2とすると、/がパス判定になり、ファイルが作成されないため -で置換。
-    plt.close()
-    
-    pool = ProcessPoolExecutor(len(sampler_initilizations))
-    
-    with pool:
-        processes = []
-        for _, sampler_init in enumerate(sampler_initilizations):                    
-            future = pool.submit(
-                run_starfish_experiment,
-                shape1=shape1,
-                shape2=shape2,
-                sampler_init=sampler_init,
-                rot_deg=rot_deg,
-                # noise_deg=noise_deg,
-            )
+        plt.tight_layout()
+        
+        raw_save_fig_dir = f"../results/figs/circle/raw"
+        os.makedirs(raw_save_fig_dir, exist_ok=True)
+        plt.savefig(f"{raw_save_fig_dir}/{n_points}_points_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}.png") # 例えば、π/2とすると、/がパス判定になり、ファイルが作成されないため -で置換。
+        plt.close()
+        
+        pool = ProcessPoolExecutor(len(sampler_initilizations))
+        
+        with pool:
+            processes = []
+            for _, sampler_init in enumerate(sampler_initilizations):                    
+                future = pool.submit(
+                    run_starfish_experiment,
+                    shape1=shape1,
+                    shape2=shape2,
+                    sampler_init=sampler_init,
+                    rot_deg=rot_deg,
+                    noise_deg=noise_deg,
+                )
 
-            processes.append(future)
+                processes.append(future)
 
-        for future in as_completed(processes):
-            future.result()
+            for future in as_completed(processes):
+                future.result()
 
 
 # %%
-def get_result_from_database(n_points, rot_deg, main_results_dir):
+def get_result_from_database(n_points, rot_deg, noise_deg, main_results_dir):
     shape1_name = f"shape1"
-    shape2_name = f"shape2_rot_π-{rot_deg:.2f}"
+    shape2_name = f"shape2_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}"
     
     data_name = f"circle_{n_points}_points_{shape1_name}_vs_{shape2_name}"
     
@@ -239,9 +256,9 @@ def get_result_from_database(n_points, rot_deg, main_results_dir):
     return study
 
 #%%
-def get_ot(n_points, rot_deg, main_results_dir, min_index):
+def get_ot(n_points, rot_deg, noise_deg, main_results_dir, min_index):
     shape1_name = f"shape1"
-    shape2_name = f"shape2_rot_π-{rot_deg:.2f}"
+    shape2_name = f"shape2_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}"
     
     data_name = f"circle_{n_points}_points_{shape1_name}_vs_{shape2_name}"
     
@@ -258,9 +275,9 @@ if main_compute:
     main_pool = ProcessPoolExecutor(n_jobs)
     
     with main_pool:
-        processes = [main_pool.submit(main_test, n_points, rot_deg) for rot_deg in rot_deg_list] 
+        processes = [main_pool.submit(main_test, n_points, noise_deg) for noise_deg in noise_deg_list] 
 
-        for future in tqdm(as_completed(processes), total=len(rot_deg_list), desc="Progress", leave=True):
+        for future in tqdm(as_completed(processes), total=len(noise_deg_list), desc="Progress", leave=True):
             future.result()
                     
                     
@@ -268,47 +285,80 @@ if main_compute:
 # plot the results
 if main_visualize:
     os.makedirs("../results/figs/circle/main_fig", exist_ok=True)
-    for rot_deg in rot_deg_list:
-        plt.figure(figsize=(10, 10))
-        
-        min_values = []
-        for sampler_init in sampler_initilizations:
-            main_results_dir = f"../results/circle/{sampler_init}"
-            study = get_result_from_database(n_points, rot_deg, main_results_dir)
-            df = study.trials_dataframe()
+    for noise_deg in noise_deg_list:
+        for rot_deg in rot_deg_list:
+            plt.figure(figsize=(10, 10))
             
-            plt.subplot(3, 1, sampler_initilizations.index(sampler_init) + 1)
-            plt.scatter(df["params_eps"], df["value"], c = 100 * df["user_attrs_best_acc"], s=12)
+            min_values = []
+            for sampler_init in sampler_initilizations:
+                main_results_dir = f"../results/circle/{sampler_init}"
+                study = get_result_from_database(n_points, rot_deg, noise_deg, main_results_dir)
+                df = study.trials_dataframe()
+                
+                plt.subplot(3, 1, sampler_initilizations.index(sampler_init) + 1)
+                plt.scatter(df["params_eps"], df["value"], c = 100 * df["user_attrs_best_acc"], s=20)
 
-            plt.xlabel("eps")
-            plt.ylabel("GWD")
-            plt.title(f"{sampler_init} (π/{int(rot_deg)})")
-            plt.colorbar()
-            plt.grid(True)
+                plt.xlabel("eps")
+                plt.ylabel("GWD")
+                plt.title(f"{sampler_init} (rot {rot_deg:.2f})")
+                plt.colorbar()
+                plt.xscale("log")
+                plt.grid(True)
+                
+                min_value = df.index[df["value"] == df["value"].min()]
+                min_values.append(min_value[0])
             
-            min_value = df.index[df["value"] == df["value"].min()]
-            min_values.append(min_value[0])
-        
-        plt.tight_layout()
-        
-        plt.savefig(f"../results/figs/circle/main_fig/comparison_log_π-{int(rot_deg)}.png")
-        plt.close()
-        
-        plt.figure(figsize=(10,4))
-        for i, sampler_init in enumerate(sampler_initilizations):
-            main_results_dir = f"../results/circle/{sampler_init}"
-            ot = get_ot(n_points, rot_deg, main_results_dir, min_values[i])
+            plt.tight_layout()
             
-            plt.subplot(1, 3, i + 1)
-            plt.imshow(ot, cmap="rocket_r")
+            plt.savefig(f"../results/figs/circle/main_fig/comparison_log-rot_{rot_deg:.2f}_noise_{noise_deg:.2f}.png")
+            plt.close()
+            
+            plt.figure(figsize=(10,4))
+            for i, sampler_init in enumerate(sampler_initilizations):
+                main_results_dir = f"../results/circle/{sampler_init}"
+                ot = get_ot(n_points, rot_deg, noise_deg, main_results_dir, min_values[i])
+                
+                plt.subplot(1, 3, i + 1)
+                plt.imshow(ot, cmap="rocket_r")
 
-            plt.xlabel(f"{n_points} points")
-            plt.ylabel(f"{n_points} points")
-            plt.title(f"OT {sampler_init} (π/{int(rot_deg)})")
-            plt.colorbar(shrink=0.6)
-            plt.grid(True)
-        
-        plt.tight_layout()
-        plt.savefig(f"../results/figs/circle/main_fig/comparison_ot_π-{int(rot_deg)}.png")
-        plt.close()
+                plt.xlabel(f"{n_points} points")
+                plt.ylabel(f"{n_points} points")
+                plt.title(f"OT {sampler_init} (rot {rot_deg:.2f})")
+                plt.colorbar(shrink=0.6)
+                plt.grid(True)
+            
+            plt.tight_layout()
+            plt.savefig(f"../results/figs/circle/main_fig/comparison_ot_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}.png")
+            plt.close()
+            
+            
+            for i, sampler_init in enumerate(sampler_initilizations):
+                main_results_dir = f"../results/circle/{sampler_init}"
+                
+                study = get_result_from_database(n_points, rot_deg, noise_deg, main_results_dir)
+                df = study.trials_dataframe()
+                
+                plt.subplots(10, 10, figsize=(15, 15))
+                plt.suptitle(f"OT {sampler_init} (rot : {rot_deg:.2f}, noise : {noise_deg:.2f})")
+                
+                for idx in df.index:
+                    ot = get_ot(n_points, rot_deg, noise_deg, main_results_dir, idx)
+                    
+                    plt.subplot(10, 10, idx+1)
+                    plt.imshow(ot, cmap="rocket_r")
+                    
+                    if idx == min_values[i]:
+                        plt.title(f"{idx+1}", color="red")
+                    else:
+                        plt.title(f"{idx+1}")
+                    
+                    
+                    
+                plt.tight_layout()
+                plt.savefig(f"../results/figs/circle/main_fig/heatmap_ot_rot_{rot_deg:.2f}_noise_{noise_deg:.2f}_{sampler_init}.png")
+                plt.close() 
+
+
 # %%
+
+        
