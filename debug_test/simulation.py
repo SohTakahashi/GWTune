@@ -12,9 +12,9 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from src.align_representations import Representation, AlignRepresentations, OptimizationConfig, VisualizationConfig
 import pandas as pd
 import seaborn as sns
-
+import copy
 # %%
-main_compute = False
+main_compute = True
 main_visualize = True
 
 # GWOT parameters
@@ -27,53 +27,8 @@ num_trial = 100
 n_points = 20 # Total number of points
 # rot_deg_list = [0, np.pi/4, np.pi/2] # Rotation degrees
 # noise_deg_list = [0, 0.05, 0.1, 0.15, 0.2] # Noise degrees
-noise_deg_list = [0]
+common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1] # Noise degrees
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
-
-#%%
-# Parameter for toolbox
-vis_config = VisualizationConfig(
-    show_figure=False,
-    figsize=(8, 6), 
-    title_size = 10, 
-    cmap = "rocket_r",
-    cbar_ticks_size=10,
-    font="Arial",
-    color_label_width=3,
-    xlabel=f"{n_points} items",
-    ylabel=f"{n_points} items",
-    xlabel_size=10,
-    ylabel_size=10,
-)
-
-vis_config_ot = VisualizationConfig(
-    show_figure=False,
-    figsize=(8, 6), 
-    title_size = 10, 
-    cmap = "rocket_r",
-    cbar_ticks_size=10,
-    font="Arial",
-    color_label_width=3,
-    xlabel=f"{n_points} items of X",
-    ylabel=f"{n_points} items of Y",
-    xlabel_size=10,
-    ylabel_size=10,
-)
-
-vis_log = VisualizationConfig(
-    show_figure=False,
-    figsize=(8, 6), 
-    title_size = 10, 
-    cmap = "viridis",
-    cbar_ticks_size=15,
-    xlabel_size=20,
-    xticks_size=15,
-    ylabel_size=20,
-    yticks_size=15,
-    cbar_label_size=15,
-    plot_eps_log=True,
-    fig_ext='svg'
-)
 
 #%%
 def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001):
@@ -109,154 +64,6 @@ def create_circle_data(n_points):
     y = np.sin(t)
     one_data = np.vstack((x, y)).T
     return one_data
-
-# %%
-def run_starfish_experiment(
-    shape1, 
-    shape2, 
-    sampler_init,
-    noise_deg,
-):
-    # define the main results directory and the representation names
-    initialization, sampler = sampler_init.split("_")
-    main_results_dir = f"../results/circle/{sampler_init}"
-    
-    # Create representations
-    rep1 = Representation(name=f"shape1", metric="euclidean", embedding=shape1)
-    rep2 = Representation(name=f"shape2_noise_{noise_deg:.2f}", metric="euclidean", embedding=shape2)
-
-    config = OptimizationConfig(
-        eps_list=eps_list,
-        num_trial=num_trial,
-        db_params={"drivername": "sqlite"},
-        sinkhorn_method="sinkhorn",
-        n_iter=1,
-        max_iter = 200,
-        to_types="numpy",  
-        device="cpu",
-        data_type="double", 
-        sampler_name=sampler,
-        init_mat_plan=initialization,
-        show_progress_bar=False,
-    )
-
-    alignment = AlignRepresentations(
-        config=config,
-        representations_list=[rep1, rep2],
-        main_results_dir=main_results_dir,
-        data_name=f"circle_{n_points}_points",
-    )
-
-    # RSA
-    fig_dir = f"../results/figs/circle/"
-    os.makedirs(fig_dir, exist_ok=True)
-    alignment.show_sim_mat(
-        visualization_config=vis_config, 
-        show_distribution=False,
-        fig_dir=f"{fig_dir}/RDM"
-    )
-    alignment.RSA_get_corr(metric="pearson")
-
-    # GW
-    data_path = f"{main_results_dir}/{alignment.data_name}_{rep1.name}_vs_{rep2.name}/*/data/*.npy"
-    npy_list = glob.glob(data_path)
-    
-    if len(npy_list) >= num_trial:
-        print(f"{alignment.data_name} was already computed.")
-        
-    else:
-        alignment.gw_alignment(
-            compute_OT=True,
-            delete_results=False,
-            visualization_config=vis_config_ot,
-            fix_random_init_seed=False,
-            sampler_seed=42,
-            delete_confirmation=False,
-        )
-        
-        alignment.show_OT(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_config_ot)
-        alignment.show_optimization_log(fig_dir=f"{fig_dir}/{sampler}_{initialization}", visualization_config=vis_log)
-
-#%%
-def main_test(n_points:int, noise_deg):
-    shape1 = create_circle_data(n_points)
-
-    if noise_deg == 0:
-        shape2 = shape1
-    else:
-        shape2 = add_noise_to_one_point(shape1, noise_deg, point_index=0)
-    
-    # Visualize the shapes
-    fig = plt.figure(figsize=(10, 6))
-
-    # Shape 1
-    ax1 = fig.add_subplot(121)
-    ax1.axis("equal")
-    ax1.scatter(shape1[:, 0], shape1[:, 1], c="C0", label='Shape 1')
-    ax1.set_title("Shape 1 (Original Circle)")
-    ax1.set_xlabel("X")
-    ax1.set_ylabel("Y")
-    ax1.grid()
-    ax1.legend(loc="upper right")
-
-    # Shape 2
-    ax2 = fig.add_subplot(122)
-    ax2.axis("equal")
-    ax2.scatter(shape2[:, 0], shape2[:, 1], c="C1", label=f'Shape 2 (noise {noise_deg:.2f})')
-    ax2.set_title("Shape 2 (Rotated Circle)")
-    ax2.set_xlabel("X")
-    ax2.set_ylabel("Y")
-    ax2.grid()
-    ax2.legend(loc="upper right")
-
-    plt.tight_layout()
-    
-    raw_save_fig_dir = f"../results/figs/circle/raw"
-    os.makedirs(raw_save_fig_dir, exist_ok=True)
-    plt.savefig(f"{raw_save_fig_dir}/{n_points}_points_noise_{noise_deg:.2f}.png")
-    plt.close()
-    
-    pool = ProcessPoolExecutor(len(sampler_initilizations))
-    
-    with pool:
-        processes = []
-        for _, sampler_init in enumerate(sampler_initilizations):                    
-            future = pool.submit(
-                run_starfish_experiment,
-                shape1=shape1,
-                shape2=shape2,
-                sampler_init=sampler_init,
-                noise_deg=noise_deg,
-            )
-
-            processes.append(future)
-
-        for future in as_completed(processes):
-            future.result()
-
-# %%
-if main_compute:
-    n_jobs = 3
-    main_pool = ProcessPoolExecutor(n_jobs)
-    
-    with main_pool:
-        processes = [main_pool.submit(main_test, n_points, noise_deg) for noise_deg in noise_deg_list] 
-
-        for future in tqdm(as_completed(processes), total=len(noise_deg_list), desc="Progress", leave=True):
-            future.result()
-                    
-
-# %%
-def get_result_from_database(data_name, main_results_dir):
-    df_path = glob.glob(f"{main_results_dir}/{data_name}/*/*.db")[0]
-    study = optuna.load_study(study_name = os.path.basename(df_path).split(".db")[0], storage = f"sqlite:///{df_path}")
-    return study
-
-# %%
-def get_ot(data_name, main_results_dir, min_index):
-    npy_path = glob.glob(f"{main_results_dir}/{data_name}/*/data/gw_{min_index}.npy")[0]
-    ot = np.load(npy_path)
-    return ot
 
 #%%
 def detect_diagonal_direction(matrix):
@@ -310,18 +117,170 @@ def detect_diagonal_direction(matrix):
 
     else:
         return "none"
-                    
+
+
+# %%
+def get_result_from_database(data_name, main_results_dir):
+    df_path = glob.glob(f"{main_results_dir}/{data_name}/*/*.db")[0]
+    study = optuna.load_study(study_name = os.path.basename(df_path).split(".db")[0], storage = f"sqlite:///{df_path}")
+    return study
+
+# %%
+def get_ot(data_name, main_results_dir, min_index):
+    npy_path = glob.glob(f"{main_results_dir}/{data_name}/*/data/gw_{min_index}.npy")[0]
+    ot = np.load(npy_path)
+    return ot
+        
+
+# %%
+class CircleDataExperiment:
+    def __init__(self, n_points, common_noise_deg=1e-6, num_common_noise=1, independent_noise_deg=0):
+        self.n_points = n_points
+        self.shape1 = create_circle_data(n_points)
+        self.shape2 = create_circle_data(n_points)
+        
+        self.common_noise_deg = common_noise_deg
+        self.num_common_noise = num_common_noise
+        
+        if num_common_noise == 0:
+            self.data_name = f"circle_{n_points}points"
+        
+        elif num_common_noise == 1:
+            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=0)
+            self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
+            
+        elif num_common_noise == 2:
+            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=0)
+            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=int(n_points/2))
+            self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
+        
+        self.shape2 = copy.deepcopy(self.shape1)
+        
+    def run_experiment(self, sampler_init):
+        # define the main results directory and the representation names
+        initialization, sampler = sampler_init.split("_")
+        main_results_dir = f"../results/circle/{sampler_init}"
+        
+        # Create representations
+        rep1 = Representation(name="shape1", metric="euclidean", embedding=self.shape1)
+        rep2 = Representation(name="shape2", metric="euclidean", embedding=self.shape2)
+
+        config = OptimizationConfig(
+            eps_list=eps_list,
+            num_trial=num_trial,
+            db_params={"drivername": "sqlite"},
+            sinkhorn_method="sinkhorn",
+            n_iter=1,
+            max_iter = 200,
+            to_types="numpy",  
+            device="cpu",
+            data_type="double", 
+            sampler_name=sampler,
+            init_mat_plan=initialization,
+            show_progress_bar=False,
+        )
+
+        alignment = AlignRepresentations(
+            config=config,
+            representations_list=[rep1, rep2],
+            main_results_dir=main_results_dir,
+            data_name=self.data_name,
+        )
+
+        # GW
+        data_path = f"{main_results_dir}/{alignment.data_name}_{rep1.name}_vs_{rep2.name}/*/data/*.npy"
+        npy_list = glob.glob(data_path)
+        
+        if len(npy_list) >= num_trial:
+            print(f"{alignment.data_name} was already computed.")
+            
+        else:
+            alignment.gw_alignment(
+                compute_OT=True,
+                delete_results=False,
+                show_log=False,
+                fix_random_init_seed=False,
+                sampler_seed=42,
+                delete_confirmation=False,
+            )
+    
+    def main_test(self):
+        pool = ProcessPoolExecutor(len(sampler_initilizations))
+        
+        with pool:
+            processes = []
+            for _, sampler_init in enumerate(sampler_initilizations):                    
+                future = pool.submit(
+                    self.run_experiment,
+                    sampler_init=sampler_init,
+                )
+
+                processes.append(future)
+
+            for future in as_completed(processes):
+                future.result()
+    
+    def visualize_raw_data(self):
+        # Visualize the shapes
+        fig = plt.figure(figsize=(10, 6))
+
+        # Shape 1
+        ax1 = fig.add_subplot(121)
+        ax1.axis("equal")
+        ax1.scatter(self.shape1[:, 0], self.shape1[:, 1], c="C0", label='Shape 1')
+        ax1.set_title("Shape 1")
+        ax1.set_xlabel("X")
+        ax1.set_ylabel("Y")
+        ax1.grid()
+        ax1.legend(loc="upper right")
+
+        # Shape 2
+        ax2 = fig.add_subplot(122)
+        ax2.axis("equal")
+        ax2.scatter(self.shape2[:, 0], self.shape2[:, 1], c="C1", label=f'Shape 2')
+        ax2.set_title("Shape 2")
+        ax2.set_xlabel("X")
+        ax2.set_ylabel("Y")
+        ax2.grid()
+        ax2.legend(loc="upper right")
+
+        plt.tight_layout()
+        
+        raw_save_fig_dir = f"../results/figs/circle/raw"
+        os.makedirs(raw_save_fig_dir, exist_ok=True)
+        plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
+        plt.close()
+
+#%%
+if main_compute:
+    num_common_noise_list = [1, 2]
+    
+    main_pool = ProcessPoolExecutor(max_workers=3)
+    
+    with main_pool:
+        main_processes = []
+        for _, common_noise in enumerate(common_noise_deg_list):
+            
+            experiment = CircleDataExperiment(n_points, common_noise_deg=common_noise, num_common_noise=1)
+            experiment.visualize_raw_data()
+
+            future = main_pool.submit(experiment.main_test)
+
+            main_processes.append(future)
+
+        for future in as_completed(main_processes):
+            future.result()
+
+
 #%%
 # plot the results
 if main_visualize:
-    os.makedirs("../results/figs/circle/main_fig", exist_ok=True)
+    os.makedirs("../results/figs/circle/main_fig/log", exist_ok=True)
     
     #%%
-    for noise_deg in noise_deg_list:
-        shape1_name = f"shape1"
-        shape2_name = f"shape2_noise_{noise_deg:.2f}"
-        
-        data_name = f"circle_{n_points}_points_{shape1_name}_vs_{shape2_name}"
+    for common_noise_deg in common_noise_deg_list:
+        experiment = CircleDataExperiment(n_points, common_noise_deg=common_noise_deg, num_common_noise=1)
+        data_name = f"{experiment.data_name}_shape1_vs_shape2"
         
         plt.figure(figsize=(10, 10))
         
@@ -336,7 +295,7 @@ if main_visualize:
 
             plt.xlabel("eps")
             plt.ylabel("GWD")
-            plt.title(f"{sampler_init} (noise {noise_deg:.2f})")
+            plt.title(f"{sampler_init}")
             plt.colorbar()
             plt.xscale("log")
             plt.grid(True)
@@ -346,7 +305,7 @@ if main_visualize:
         
         plt.tight_layout()
         
-        plt.savefig(f"../results/figs/circle/main_fig/comparison_log_noise_{noise_deg:.2f}.png")
+        plt.savefig(f"../results/figs/circle/main_fig/log/comparison_log_{data_name}.png")
         plt.close()
         
         #%%
@@ -360,12 +319,12 @@ if main_visualize:
 
             plt.xlabel(f"{n_points} points")
             plt.ylabel(f"{n_points} points")
-            plt.title(f"OT {sampler_init} (noise {noise_deg:.2f})")
+            plt.title(f"OT {sampler_init}")
             plt.colorbar(shrink=0.6)
             plt.grid(True)
         
         plt.tight_layout()
-        plt.savefig(f"../results/figs/circle/main_fig/comparison_ot_noise_{noise_deg:.2f}.png")
+        plt.savefig(f"../results/figs/circle/main_fig/log/comparison_ot_{data_name}.png")
         plt.close()
         
         #%%         
@@ -376,8 +335,11 @@ if main_visualize:
             study = get_result_from_database(data_name, main_results_dir)
             df = study.trials_dataframe()
             
+            save_fig_path = f"../results/figs/circle/main_fig/{sampler_init}/"
+            os.makedirs(save_fig_path, exist_ok=True)
+            
             plt.subplots(10, 10, figsize=(18, 18))
-            plt.suptitle(f"OT {sampler_init} (noise : {noise_deg:.2f}, ascending sorted by GWD)", size=20, y=0.99)
+            plt.suptitle(f"OT {sampler_init} (ascending sorted by GWD)", size=20, y=0.99)
             
             for _, idx in enumerate(df.sort_values(by="value").index[:]):
                 ot = get_ot(data_name, main_results_dir, idx)
@@ -388,10 +350,14 @@ if main_visualize:
                 res = detect_diagonal_direction(ot)
                 
                 gwd = df.loc[idx, "value"]
-                plt.title(f"{res}, GWD:{gwd:.2e}")
+                
+                if "R0" in res:
+                    plt.title(f"{res}, GWD:{gwd:.2e}", color="red")
+                else:
+                    plt.title(f"{res}, GWD:{gwd:.2e}")
             
             plt.tight_layout()
-            plt.savefig(f"../results/figs/circle/main_fig/heatmap_ot_noise_{noise_deg:.2f}_{sampler_init}.png")
+            plt.savefig(f"{save_fig_path}/heatmap_ot_{data_name}.png")
             plt.close() 
 
 
