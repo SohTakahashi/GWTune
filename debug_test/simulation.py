@@ -2,40 +2,33 @@
 import sys, os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from typing import Optional
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import optuna
 import glob
 from tqdm.auto import tqdm
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from src.align_representations import Representation, AlignRepresentations, OptimizationConfig, VisualizationConfig
+from src.align_representations import Representation, AlignRepresentations, OptimizationConfig
 import pandas as pd
-import seaborn as sns
 import copy
-# %%
-main_compute = True
-main_visualize = True
-
-# GWOT parameters
-eps_list = [1e-2, 1e-0]
-num_trial = 100
-
-# optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-# Parameters
-n_points = 20 # Total number of points
-# rot_deg_list = [0, np.pi/4, np.pi/2] # Rotation degrees
-# noise_deg_list = [0, 0.05, 0.1, 0.15, 0.2] # Noise degrees
-common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1] # Noise degrees
-sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
-def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001):
+def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001, except_point_index:Optional[list | int]=None):
     """
     Adds independent Gaussian noise to all dimensions of all points.
     """
     noise = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape)
+    
+    if except_point_index is not None:
+        if isinstance(except_point_index, int):
+            noise[except_point_index] = 0
+        elif isinstance(except_point_index, list):
+            for index in except_point_index:
+                noise[index] = 0
+        else:
+            raise ValueError("except_point_index must be either int or list.")
+    
     return points + noise
 
 #%%
@@ -48,6 +41,7 @@ def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
     noise[:, dimension] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[0])
     return points + noise
 
+#%%
 def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
     """
     Adds Gaussian noise to all dimensions of a single point in the point cloud.
@@ -118,7 +112,6 @@ def detect_diagonal_direction(matrix):
     else:
         return "none"
 
-
 # %%
 def get_result_from_database(data_name, main_results_dir):
     df_path = glob.glob(f"{main_results_dir}/{data_name}/*/*.db")[0]
@@ -130,11 +123,17 @@ def get_ot(data_name, main_results_dir, min_index):
     npy_path = glob.glob(f"{main_results_dir}/{data_name}/*/data/gw_{min_index}.npy")[0]
     ot = np.load(npy_path)
     return ot
-        
 
 # %%
 class CircleDataExperiment:
-    def __init__(self, n_points, common_noise_deg=1e-6, num_common_noise=1, independent_noise_deg=0):
+    def __init__(
+        self, 
+        n_points, 
+        common_noise_deg=1e-6, 
+        num_common_noise=1, 
+        independent_noise_deg=0,
+        rotation_deg=0,
+    ):
         self.n_points = n_points
         self.shape1 = create_circle_data(n_points)
         self.shape2 = create_circle_data(n_points)
@@ -155,6 +154,21 @@ class CircleDataExperiment:
             self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
         
         self.shape2 = copy.deepcopy(self.shape1)
+
+        if independent_noise_deg > 0:
+            if num_common_noise == 0:
+                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg)
+            elif num_common_noise == 1:
+                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=0)
+            elif num_common_noise == 2:
+                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=[0, int(n_points/2)])
+            
+            self.data_name += f"_independent_noise_deg:{independent_noise_deg:.2e}"
+        
+        if rotation_deg > 0:
+            rotation_matrix = np.array([[np.cos(rotation_deg), -np.sin(rotation_deg)], [np.sin(rotation_deg), np.cos(rotation_deg)]])
+            self.shape2 = (rotation_matrix @ self.shape2.T).T
+            self.data_name += f"_rotation_deg:{rotation_deg:.2f}"
         
     def run_experiment(self, sampler_init):
         # define the main results directory and the representation names
@@ -251,114 +265,154 @@ class CircleDataExperiment:
         plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
         plt.close()
 
-#%%
-if main_compute:
-    num_common_noise_list = [1, 2]
-    
-    main_pool = ProcessPoolExecutor(max_workers=3)
+def main_test_with_independent_noise(independent_noise_deg, max_workers=3):
+    main_pool = ProcessPoolExecutor(max_workers=max_workers)
     
     with main_pool:
         main_processes = []
-        for _, common_noise in enumerate(common_noise_deg_list):
+        for _, common_noise_deg in enumerate(common_noise_deg_list):
             
-            experiment = CircleDataExperiment(n_points, common_noise_deg=common_noise, num_common_noise=1)
+            if common_noise_deg == 0:num_common_noise = 0
+            else:num_common_noise = main_num_common_noise
+            
+            experiment = CircleDataExperiment(
+                n_points, 
+                common_noise_deg=common_noise_deg, 
+                num_common_noise=num_common_noise,
+                independent_noise_deg=independent_noise_deg,
+                rotation_deg=main_rot_deg,
+            )
             experiment.visualize_raw_data()
 
             future = main_pool.submit(experiment.main_test)
 
             main_processes.append(future)
 
-        for future in as_completed(main_processes):
+        for future in tqdm(as_completed(main_processes), total=len(common_noise_deg_list), desc=f"independent noise deg:{independent_noise_deg:.2e}", leave=True):
             future.result()
 
+
+# %%
+main_compute = True
+main_visualize = True
+
+# GWOT parameters
+eps_list = [1e-2, 1e-0]
+num_trial = 100
+
+# optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+# Parameters
+n_points = 20 # Total number of points
+common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+indepen_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
+
+#%%
+main_num_common_noise = 1
+main_rot_deg = 0
+
+#%%
+if main_compute:
+    for independent_noise_deg in indepen_noise_deg_list:
+        main_test_with_independent_noise(independent_noise_deg)
 
 #%%
 # plot the results
 if main_visualize:
-    os.makedirs("../results/figs/circle/main_fig/log", exist_ok=True)
+    os.makedirs("../results/figs/circle/main_fig/log/opt_ot", exist_ok=True)
+    os.makedirs("../results/figs/circle/main_fig/log/opt_log", exist_ok=True)
     
     #%%
-    for common_noise_deg in common_noise_deg_list:
-        experiment = CircleDataExperiment(n_points, common_noise_deg=common_noise_deg, num_common_noise=1)
-        data_name = f"{experiment.data_name}_shape1_vs_shape2"
-        
-        plt.figure(figsize=(10, 10))
-        
-        min_values = []
-        for sampler_init in sampler_initilizations:
-            main_results_dir = f"../results/circle/{sampler_init}"
-            study = get_result_from_database(data_name, main_results_dir)
-            df = study.trials_dataframe()
+    for independent_noise_deg in tqdm(indepen_noise_deg_list):
+        for common_noise_deg in common_noise_deg_list:
+            if common_noise_deg == 0:num_common_noise = 0
+            else:num_common_noise = main_num_common_noise
             
-            plt.subplot(3, 1, sampler_initilizations.index(sampler_init) + 1)
-            plt.scatter(df["params_eps"], df["value"], c = 100 * df["user_attrs_best_acc"], s=20)
+            experiment = CircleDataExperiment(
+                n_points, 
+                common_noise_deg=common_noise_deg, 
+                num_common_noise=num_common_noise,
+                independent_noise_deg=independent_noise_deg,
+                rotation_deg=main_rot_deg,
+            )
+            data_name = f"{experiment.data_name}_shape1_vs_shape2"
+            
+            plt.figure(figsize=(10, 10))
+            
+            min_values = []
+            for sampler_init in sampler_initilizations:
+                main_results_dir = f"../results/circle/{sampler_init}"
+                study = get_result_from_database(data_name, main_results_dir)
+                df = study.trials_dataframe()
+                
+                plt.subplot(3, 1, sampler_initilizations.index(sampler_init) + 1)
+                plt.scatter(df["params_eps"], df["value"], c = 100 * df["user_attrs_best_acc"], s=20)
 
-            plt.xlabel("eps")
-            plt.ylabel("GWD")
-            plt.title(f"{sampler_init}")
-            plt.colorbar()
-            plt.xscale("log")
-            plt.grid(True)
-            
-            min_value = df.index[df["value"] == df["value"].min()]
-            min_values.append(min_value[0])
-        
-        plt.tight_layout()
-        
-        plt.savefig(f"../results/figs/circle/main_fig/log/comparison_log_{data_name}.png")
-        plt.close()
-        
-        #%%
-        plt.figure(figsize=(10, 4))
-        for i, sampler_init in enumerate(sampler_initilizations):
-            main_results_dir = f"../results/circle/{sampler_init}"
-            ot = get_ot(data_name, main_results_dir, min_values[i])
-            
-            plt.subplot(1, 3, i + 1)
-            plt.imshow(ot, cmap="rocket_r")
-
-            plt.xlabel(f"{n_points} points")
-            plt.ylabel(f"{n_points} points")
-            plt.title(f"OT {sampler_init}")
-            plt.colorbar(shrink=0.6)
-            plt.grid(True)
-        
-        plt.tight_layout()
-        plt.savefig(f"../results/figs/circle/main_fig/log/comparison_ot_{data_name}.png")
-        plt.close()
-        
-        #%%         
-        for i, sampler_init in enumerate(sampler_initilizations[:]):
-            print(sampler_init)
-            main_results_dir = f"../results/circle/{sampler_init}"
-            
-            study = get_result_from_database(data_name, main_results_dir)
-            df = study.trials_dataframe()
-            
-            save_fig_path = f"../results/figs/circle/main_fig/{sampler_init}/"
-            os.makedirs(save_fig_path, exist_ok=True)
-            
-            plt.subplots(10, 10, figsize=(18, 18))
-            plt.suptitle(f"OT {sampler_init} (ascending sorted by GWD)", size=20, y=0.99)
-            
-            for _, idx in enumerate(df.sort_values(by="value").index[:]):
-                ot = get_ot(data_name, main_results_dir, idx)
+                plt.xlabel("eps")
+                plt.ylabel("GWD")
+                plt.title(f"{sampler_init}")
+                plt.colorbar()
+                plt.xscale("log")
+                plt.grid(True)
                 
-                plt.subplot(10, 10, _+1)
-                plt.imshow(ot, cmap="rocket_r")
-                
-                res = detect_diagonal_direction(ot)
-                
-                gwd = df.loc[idx, "value"]
-                
-                if "R0" in res:
-                    plt.title(f"{res}, GWD:{gwd:.2e}", color="red")
-                else:
-                    plt.title(f"{res}, GWD:{gwd:.2e}")
+                min_value = df.index[df["value"] == df["value"].min()]
+                min_values.append(min_value[0])
             
             plt.tight_layout()
-            plt.savefig(f"{save_fig_path}/heatmap_ot_{data_name}.png")
-            plt.close() 
+            
+            plt.savefig(f"../results/figs/circle/main_fig/log/opt_log/comparison_log_{data_name}.png")
+            plt.close()
+            
+
+            plt.figure(figsize=(10, 4))
+            for i, sampler_init in enumerate(sampler_initilizations):
+                main_results_dir = f"../results/circle/{sampler_init}"
+                ot = get_ot(data_name, main_results_dir, min_values[i])
+                
+                plt.subplot(1, 3, i + 1)
+                plt.imshow(ot, cmap="rocket_r")
+
+                plt.xlabel(f"{n_points} points")
+                plt.ylabel(f"{n_points} points")
+                plt.title(f"OT {sampler_init}")
+                plt.colorbar(shrink=0.6)
+                plt.grid(True)
+            
+            plt.tight_layout()
+            plt.savefig(f"../results/figs/circle/main_fig/log/opt_ot/comparison_ot_{data_name}.png")
+            plt.close()
+                
+            for i, sampler_init in enumerate(sampler_initilizations[:]):
+                main_results_dir = f"../results/circle/{sampler_init}"
+                
+                study = get_result_from_database(data_name, main_results_dir)
+                df = study.trials_dataframe()
+                
+                save_fig_path = f"../results/figs/circle/main_fig/{sampler_init}/"
+                os.makedirs(save_fig_path, exist_ok=True)
+                
+                plt.subplots(10, 10, figsize=(18, 18))
+                plt.suptitle(f"OT {sampler_init} (ascending sorted by GWD)", size=20, y=0.99)
+                
+                for _, idx in enumerate(df.sort_values(by="value").index[:]):
+                    ot = get_ot(data_name, main_results_dir, idx)
+                    
+                    plt.subplot(10, 10, _+1)
+                    plt.imshow(ot, cmap="rocket_r")
+                    
+                    res = detect_diagonal_direction(ot)
+                    
+                    gwd = df.loc[idx, "value"]
+                    
+                    if "R0" in res:
+                        plt.title(f"{res}, GWD:{gwd:.2e}", color="red")
+                    else:
+                        plt.title(f"{res}, GWD:{gwd:.2e}")
+                
+                plt.tight_layout()
+                plt.savefig(f"{save_fig_path}/heatmap_ot_{data_name}.png")
+                plt.close() 
 
 
 # %%
