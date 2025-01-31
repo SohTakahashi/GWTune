@@ -12,7 +12,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from src.align_representations import Representation, AlignRepresentations, OptimizationConfig
 import pandas as pd
 import copy
-
+import scipy as sp
 #%%
 def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001, except_point_index:Optional[list | int]=None):
     """
@@ -132,7 +132,7 @@ class CircleDataExperiment:
         common_noise_deg=1e-6, 
         num_common_noise=1, 
         independent_noise_deg=0,
-        rotation_deg=0,
+        rotation_index=0,
     ):
         self.n_points = n_points
         self.shape1 = create_circle_data(n_points)
@@ -140,6 +140,7 @@ class CircleDataExperiment:
         
         self.common_noise_deg = common_noise_deg
         self.num_common_noise = num_common_noise
+        self.rotation_index = rotation_index
         
         if num_common_noise == 0:
             self.data_name = f"circle_{n_points}points"
@@ -154,6 +155,10 @@ class CircleDataExperiment:
             self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
         
         self.shape2 = copy.deepcopy(self.shape1)
+        
+        if rotation_index > 0:
+            self.shape2 = np.roll(self.shape2, rotation_index, axis=0)
+            self.data_name += f"_rotation_index:{rotation_index}"
 
         if independent_noise_deg > 0:
             if num_common_noise == 0:
@@ -164,12 +169,7 @@ class CircleDataExperiment:
                 self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=[0, int(n_points/2)])
             
             self.data_name += f"_independent_noise_deg:{independent_noise_deg:.2e}"
-        
-        if rotation_deg > 0:
-            rotation_matrix = np.array([[np.cos(rotation_deg), -np.sin(rotation_deg)], [np.sin(rotation_deg), np.cos(rotation_deg)]])
-            self.shape2 = (rotation_matrix @ self.shape2.T).T
-            self.data_name += f"_rotation_deg:{rotation_deg:.2f}"
-        
+    
     def run_experiment(self, sampler_init):
         # define the main results directory and the representation names
         initialization, sampler = sampler_init.split("_")
@@ -200,7 +200,7 @@ class CircleDataExperiment:
             main_results_dir=main_results_dir,
             data_name=self.data_name,
         )
-
+        
         # GW
         data_path = f"{main_results_dir}/{alignment.data_name}_{rep1.name}_vs_{rep2.name}/*/data/*.npy"
         npy_list = glob.glob(data_path)
@@ -260,8 +260,26 @@ class CircleDataExperiment:
 
         plt.tight_layout()
         
-        raw_save_fig_dir = f"../results/figs/circle/raw"
+        raw_save_fig_dir = f"../results/circle/fig/raw"
         os.makedirs(raw_save_fig_dir, exist_ok=True)
+        plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
+        plt.close()
+        
+        mat1 = sp.spatial.distance.cdist(self.shape1, self.shape1)
+        mat2 = sp.spatial.distance.cdist(self.shape2, self.shape2)
+        
+        cmap = "rocket"
+        plt.figure(figsize=(10, 6))
+        plt.suptitle(f"RDM, rotation index:{self.rotation_index}")
+        plt.subplot(121)
+        plt.imshow(mat1, cmap=cmap)
+        plt.colorbar(orientation="horizontal")
+        plt.subplot(122)
+        plt.imshow(mat2, cmap=cmap)
+        plt.colorbar(orientation="horizontal")
+        raw_save_fig_dir = f"../results/circle/fig/rdm"
+        os.makedirs(raw_save_fig_dir, exist_ok=True)
+        plt.tight_layout()
         plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
         plt.close()
 
@@ -280,7 +298,7 @@ def main_test_with_independent_noise(independent_noise_deg, max_workers=3):
                 common_noise_deg=common_noise_deg, 
                 num_common_noise=num_common_noise,
                 independent_noise_deg=independent_noise_deg,
-                rotation_deg=main_rot_deg,
+                rotation_index=main_rot_index,
             )
             experiment.visualize_raw_data()
 
@@ -304,27 +322,39 @@ num_trial = 100
 
 # Parameters
 n_points = 20 # Total number of points
-common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
-indepen_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 2e-1]
+independent_noise_deg_list = [0]#, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
 main_num_common_noise = 1
-main_rot_deg = 0
+main_rot_index = 5
 
 #%%
+test = False
+if test:
+    experiment = CircleDataExperiment(
+        n_points, 
+        common_noise_deg=0.2, 
+        num_common_noise=1, 
+        independent_noise_deg=0,
+        rotation_index=10,
+    )
+    experiment.visualize_raw_data()
+    
+#%%
 if main_compute:
-    for independent_noise_deg in indepen_noise_deg_list:
+    for independent_noise_deg in independent_noise_deg_list:
         main_test_with_independent_noise(independent_noise_deg)
 
 #%%
 # plot the results
 if main_visualize:
-    os.makedirs("../results/figs/circle/main_fig/log/opt_ot", exist_ok=True)
-    os.makedirs("../results/figs/circle/main_fig/log/opt_log", exist_ok=True)
+    os.makedirs("../results/circle/fig/main_fig/log/opt_ot", exist_ok=True)
+    os.makedirs("../results/circle/fig/main_fig/log/opt_log", exist_ok=True)
     
     #%%
-    for independent_noise_deg in tqdm(indepen_noise_deg_list):
+    for independent_noise_deg in tqdm(independent_noise_deg_list):
         for common_noise_deg in common_noise_deg_list:
             if common_noise_deg == 0:num_common_noise = 0
             else:num_common_noise = main_num_common_noise
@@ -334,7 +364,7 @@ if main_visualize:
                 common_noise_deg=common_noise_deg, 
                 num_common_noise=num_common_noise,
                 independent_noise_deg=independent_noise_deg,
-                rotation_deg=main_rot_deg,
+                rotation_index=main_rot_index,
             )
             data_name = f"{experiment.data_name}_shape1_vs_shape2"
             
@@ -361,7 +391,7 @@ if main_visualize:
             
             plt.tight_layout()
             
-            plt.savefig(f"../results/figs/circle/main_fig/log/opt_log/comparison_log_{data_name}.png")
+            plt.savefig(f"../results/circle/fig/main_fig/log/opt_log/comparison_log_{data_name}.png")
             plt.close()
             
 
@@ -380,7 +410,7 @@ if main_visualize:
                 plt.grid(True)
             
             plt.tight_layout()
-            plt.savefig(f"../results/figs/circle/main_fig/log/opt_ot/comparison_ot_{data_name}.png")
+            plt.savefig(f"../results/circle/fig/main_fig/log/opt_ot/comparison_ot_{data_name}.png")
             plt.close()
                 
             for i, sampler_init in enumerate(sampler_initilizations[:]):
@@ -389,7 +419,7 @@ if main_visualize:
                 study = get_result_from_database(data_name, main_results_dir)
                 df = study.trials_dataframe()
                 
-                save_fig_path = f"../results/figs/circle/main_fig/{sampler_init}/"
+                save_fig_path = f"../results/circle/fig/main_fig/{sampler_init}/"
                 os.makedirs(save_fig_path, exist_ok=True)
                 
                 plt.subplots(10, 10, figsize=(18, 18))
