@@ -42,13 +42,19 @@ def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
     return points + noise
 
 #%%
-def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
+def add_noise_to_one_point(points, noise_deg=0.0001, point_index:Optional[list | int]=0):
     """
     Adds Gaussian noise to all dimensions of a single point in the point cloud.
     This is a sanity check to observe the effect of noise on a single point.
     """
     noise = np.zeros_like(points)
-    noise[point_index, :] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[1])
+    
+    if isinstance(point_index, int):
+        noise[point_index, :] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[1])
+    elif isinstance(point_index, list):
+        for index in point_index:
+            noise[index, :] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[1])
+            
     return points + noise
 
 #%%
@@ -130,7 +136,7 @@ class CircleDataExperiment:
         self, 
         n_points, 
         common_noise_deg=1e-6, 
-        num_common_noise=1, 
+        common_noise_list :list=[], 
         independent_noise_deg=0,
         rotation_index=0,
     ):
@@ -139,20 +145,15 @@ class CircleDataExperiment:
         self.shape2 = create_circle_data(n_points)
         
         self.common_noise_deg = common_noise_deg
-        self.num_common_noise = num_common_noise
+        self.common_noise_list  = common_noise_list 
         self.rotation_index = rotation_index
         
-        if num_common_noise == 0:
+        if len(common_noise_list) == 0:
             self.data_name = f"circle_{n_points}points"
         
-        elif num_common_noise == 1:
-            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=0)
-            self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
-            
-        elif num_common_noise == 2:
-            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=0)
-            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=int(n_points/2))
-            self.data_name = f"circle_{n_points}points_common_noise({num_common_noise}_deg:{common_noise_deg:.2e})"
+        else:
+            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=common_noise_list)
+            self.data_name = f"circle_{n_points}points_common_noise({len(common_noise_list )}_deg:{common_noise_deg:.2e})"
         
         self.shape2 = copy.deepcopy(self.shape1)
         
@@ -161,12 +162,10 @@ class CircleDataExperiment:
             self.data_name += f"_rotation_index:{rotation_index}"
 
         if independent_noise_deg > 0:
-            if num_common_noise == 0:
+            if common_noise_list == []:
                 self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg)
-            elif num_common_noise == 1:
-                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=0)
-            elif num_common_noise == 2:
-                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=[0, int(n_points/2)])
+            else:
+                self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=common_noise_list)
             
             self.data_name += f"_independent_noise_deg:{independent_noise_deg:.2e}"
     
@@ -234,7 +233,7 @@ class CircleDataExperiment:
             for future in as_completed(processes):
                 future.result()
     
-    def visualize_raw_data(self):
+    def visualize_raw_data(self, test=False):
         # Visualize the shapes
         fig = plt.figure(figsize=(10, 6))
 
@@ -280,7 +279,10 @@ class CircleDataExperiment:
         raw_save_fig_dir = f"../results/circle/fig/rdm"
         os.makedirs(raw_save_fig_dir, exist_ok=True)
         plt.tight_layout()
-        plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
+        if test:
+            plt.show()
+        else:
+            plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
         plt.close()
 
 def main_test_with_independent_noise(independent_noise_deg, max_workers=3):
@@ -290,13 +292,13 @@ def main_test_with_independent_noise(independent_noise_deg, max_workers=3):
         main_processes = []
         for _, common_noise_deg in enumerate(common_noise_deg_list):
             
-            if common_noise_deg == 0:num_common_noise = 0
-            else:num_common_noise = main_num_common_noise
+            if common_noise_deg == 0:common_noise_list = []
+            else:common_noise_list = main_common_noise_list  
             
             experiment = CircleDataExperiment(
                 n_points, 
                 common_noise_deg=common_noise_deg, 
-                num_common_noise=num_common_noise,
+                common_noise_list=common_noise_list,
                 independent_noise_deg=independent_noise_deg,
                 rotation_index=main_rot_index,
             )
@@ -327,20 +329,20 @@ independent_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
-main_num_common_noise = 1
+main_common_noise_list = [0, 10]
 main_rot_index = 0
 
 #%%
-test = False
+test = True
 if test:
     experiment = CircleDataExperiment(
         n_points, 
         common_noise_deg=0.2, 
-        num_common_noise=2, 
+        common_noise_list=[0, 10], 
         independent_noise_deg=0,
         rotation_index=0,
     )
-    experiment.visualize_raw_data()
+    experiment.visualize_raw_data(test=test)
     
 #%%
 if main_compute:
@@ -356,13 +358,13 @@ if main_visualize:
     #%%
     for independent_noise_deg in tqdm(independent_noise_deg_list):
         for common_noise_deg in common_noise_deg_list:
-            if common_noise_deg == 0:num_common_noise = 0
-            else:num_common_noise = main_num_common_noise
+            if common_noise_deg == 0:common_noise_list = 0
+            else:common_noise_list = main_common_noise_list  
             
             experiment = CircleDataExperiment(
                 n_points, 
                 common_noise_deg=common_noise_deg, 
-                num_common_noise=num_common_noise,
+                common_noise_list=common_noise_list,
                 independent_noise_deg=independent_noise_deg,
                 rotation_index=main_rot_index,
             )
