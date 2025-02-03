@@ -323,12 +323,12 @@ num_trial = 100
 # Parameters
 n_points = 20 # Total number of points
 common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 2e-1]
-independent_noise_deg_list = [0]#, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+independent_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
 main_num_common_noise = 1
-main_rot_index = 5
+main_rot_index = 0
 
 #%%
 test = False
@@ -336,9 +336,9 @@ if test:
     experiment = CircleDataExperiment(
         n_points, 
         common_noise_deg=0.2, 
-        num_common_noise=1, 
+        num_common_noise=2, 
         independent_noise_deg=0,
-        rotation_index=10,
+        rotation_index=0,
     )
     experiment.visualize_raw_data()
     
