@@ -261,7 +261,10 @@ class CircleDataExperiment:
         
         raw_save_fig_dir = f"../results/circle/fig/raw"
         os.makedirs(raw_save_fig_dir, exist_ok=True)
-        plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
+        if test:
+            plt.show()
+        else:
+            plt.savefig(f"{raw_save_fig_dir}/{self.data_name}.png")
         plt.close()
         
         mat1 = sp.spatial.distance.cdist(self.shape1, self.shape1)
