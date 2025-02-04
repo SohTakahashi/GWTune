@@ -14,7 +14,7 @@ import pandas as pd
 import copy
 import scipy as sp
 #%%
-def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001, except_point_index:Optional[list | int]=None):
+def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001, except_point_index=None):
     """
     Adds independent Gaussian noise to all dimensions of all points.
     """
@@ -42,7 +42,7 @@ def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
     return points + noise
 
 #%%
-def add_noise_to_one_point(points, noise_deg=0.0001, point_index:Optional[list | int]=0):
+def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
     """
     Adds Gaussian noise to all dimensions of a single point in the point cloud.
     This is a sanity check to observe the effect of noise on a single point.
