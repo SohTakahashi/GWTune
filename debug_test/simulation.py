@@ -32,21 +32,13 @@ def add_independent_noise_to_all_dimensions(points, noise_deg=0.0001, except_poi
     return points + noise
 
 #%%
-def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0):
-    """
-    Adds Gaussian noise to only one dimension of each point in the point cloud.
-    This is a sanity check to observe the effect of noise on a single dimension.
-    """
-    noise = np.zeros_like(points)
-    noise[:, dimension] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[0])
-    return points + noise
-
-#%%
-def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
+def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0, seed=None):
     """
     Adds Gaussian noise to all dimensions of a single point in the point cloud.
     This is a sanity check to observe the effect of noise on a single point.
     """
+    if seed is not None:
+        np.random.seed(seed)
     noise = np.zeros_like(points)
     
     if isinstance(point_index, int):
@@ -55,6 +47,18 @@ def add_noise_to_one_point(points, noise_deg=0.0001, point_index=0):
         for index in point_index:
             noise[index, :] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[1])
             
+    return points + noise
+
+#%%
+def add_noise_to_one_dimension(points, noise_deg=0.0001, dimension=0, seed=None):
+    """
+    Adds Gaussian noise to only one dimension of each point in the point cloud.
+    This is a sanity check to observe the effect of noise on a single dimension.
+    """
+    if seed is not None:
+        np.random.seed(seed)
+    noise = np.zeros_like(points)
+    noise[:, dimension] = np.random.normal(loc=0.0, scale=noise_deg, size=points.shape[0])
     return points + noise
 
 #%%
@@ -138,6 +142,7 @@ class CircleDataExperiment:
         common_noise_deg=1e-6, 
         common_noise_list :list=[], 
         independent_noise_deg=0,
+        dimension_noise_deg=0,
         rotation_index=0,
     ):
         self.n_points = n_points
@@ -152,8 +157,8 @@ class CircleDataExperiment:
             self.data_name = f"circle_{n_points}points"
         
         else:
-            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=common_noise_list)
-            self.data_name = f"circle_{n_points}points_common_noise({len(common_noise_list )}_deg:{common_noise_deg:.2e})"
+            self.shape1 = add_noise_to_one_point(self.shape1, common_noise_deg, point_index=common_noise_list, seed=0)
+            self.data_name = f"circle_{n_points}points_common_noise({len(common_noise_list)}_deg:{common_noise_deg:.2e})"
         
         self.shape2 = copy.deepcopy(self.shape1)
         
@@ -168,7 +173,11 @@ class CircleDataExperiment:
                 self.shape2 = add_independent_noise_to_all_dimensions(self.shape2, noise_deg=independent_noise_deg, except_point_index=common_noise_list)
             
             self.data_name += f"_independent_noise_deg:{independent_noise_deg:.2e}"
-    
+        
+        if dimension_noise_deg > 0:
+            self.shape2 = add_noise_to_one_dimension(self.shape2, noise_deg=dimension_noise_deg, dimension=0, seed=0)
+            self.data_name += f"_dimension_noise_deg:{dimension_noise_deg:.2e}"
+                
     def run_experiment(self, sampler_init):
         # define the main results directory and the representation names
         initialization, sampler = sampler_init.split("_")
@@ -242,19 +251,30 @@ class CircleDataExperiment:
         ax1.axis("equal")
         ax1.scatter(self.shape1[:, 0], self.shape1[:, 1], c="C0", label='Shape 1')
         ax1.set_title("Shape 1")
+        for i in range(self.n_points):
+            ax1.text(self.shape1[i, 0], self.shape1[i, 1] + 2e-2, str(i), ha='center', fontsize=12, color="black")
         ax1.set_xlabel("X")
         ax1.set_ylabel("Y")
         ax1.grid()
+        ax1.set_axisbelow(True)
         ax1.legend(loc="upper right")
 
         # Shape 2
         ax2 = fig.add_subplot(122)
         ax2.axis("equal")
         ax2.scatter(self.shape2[:, 0], self.shape2[:, 1], c="C1", label=f'Shape 2')
+        for i in range(self.n_points):
+            if i == 5:
+                ax2.text(self.shape2[i, 0] + 2e-2, self.shape2[i, 1], str(i), ha='left', fontsize=12, color="black")
+            elif i == 6:
+                ax2.text(self.shape2[i, 0] - 2e-2, self.shape2[i, 1] -4e-2, str(i), ha='right', fontsize=12, color="black")
+            else:
+                ax2.text(self.shape2[i, 0], self.shape2[i, 1] + 2e-2, str(i), ha='center', fontsize=12, color="black")
         ax2.set_title("Shape 2")
         ax2.set_xlabel("X")
         ax2.set_ylabel("Y")
         ax2.grid()
+        ax2.set_axisbelow(True)
         ax2.legend(loc="upper right")
 
         plt.tight_layout()
@@ -303,6 +323,7 @@ def main_test_with_independent_noise(independent_noise_deg, max_workers=3):
                 common_noise_deg=common_noise_deg, 
                 common_noise_list=common_noise_list,
                 independent_noise_deg=independent_noise_deg,
+                dimension_noise_deg=0.1,
                 rotation_index=main_rot_index,
             )
             experiment.visualize_raw_data()
@@ -327,12 +348,12 @@ num_trial = 100
 
 # Parameters
 n_points = 20 # Total number of points
-common_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 2e-1]
-independent_noise_deg_list = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1]
+common_noise_deg_list = [1e-1]
+independent_noise_deg_list = [0]
 sampler_initilizations = ["random_tpe", "random_grid", "uniform_grid"]
 
 #%%
-main_common_noise_list = [0, 10]
+main_common_noise_list = [0, 1, 4, 6, 8, 11, 14, 18]
 main_rot_index = 0
 
 #%%
@@ -340,9 +361,10 @@ test = True
 if test:
     experiment = CircleDataExperiment(
         n_points, 
-        common_noise_deg=0.2, 
-        common_noise_list=[0, 10], 
+        common_noise_deg=0.1, 
+        common_noise_list=[0, 1, 4, 6, 8, 11, 14, 18], 
         independent_noise_deg=0,
+        dimension_noise_deg=0.1,
         rotation_index=0,
     )
     experiment.visualize_raw_data(test=test)
@@ -369,6 +391,7 @@ if main_visualize:
                 common_noise_deg=common_noise_deg, 
                 common_noise_list=common_noise_list,
                 independent_noise_deg=independent_noise_deg,
+                dimension_noise_deg=0.1,
                 rotation_index=main_rot_index,
             )
             data_name = f"{experiment.data_name}_shape1_vs_shape2"
@@ -389,6 +412,8 @@ if main_visualize:
                 plt.title(f"{sampler_init}")
                 plt.colorbar()
                 plt.xscale("log")
+                plt.yscale("log")
+                plt.ylim(1e-2, 1e-0)
                 plt.grid(True)
                 
                 min_value = df.index[df["value"] == df["value"].min()]
