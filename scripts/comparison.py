@@ -2,24 +2,15 @@
 import os, sys, glob
 import optuna
 import matplotlib.pyplot as plt
+import pandas as pd
+import numpy as np
 
 #%%
-def get_data(data_select):
-    path = f"../results/{data_select}"
-    print(glob.glob(f"{path}/*/*/*.db"))
-    random_path = glob.glob(f"{path}/*/random/*.db")[0]
-    uniform_path = glob.glob(f"{path}/*/uniform/*.db")[0]
-    
-    if "simulation" in data_select:
-        random_grid_path = glob.glob(f"{path}/random+grid/*/random/*.db")[0]
-    else:
-        random_grid_path = glob.glob(f"../results/random+grid/{data_select}/*/random/*.db")[0]
-
-    df_random = optuna.load_study(study_name = os.path.basename(random_path).split(".db")[0], storage = f"sqlite:///{random_path}").trials_dataframe()
-    df_uniform = optuna.load_study(study_name = os.path.basename(uniform_path).split(".db")[0], storage = f"sqlite:///{uniform_path}").trials_dataframe()
-    df_random_grid = optuna.load_study(study_name = os.path.basename(random_grid_path).split(".db")[0], storage = f"sqlite:///{random_grid_path}").trials_dataframe()
-
-    return df_random, df_uniform, df_random_grid
+def get_data(data_select, init_plan, sampler_name):
+    path = f"../results/{data_select}/{sampler_name}"
+    db_path = glob.glob(f"{path}/*/{init_plan}/*.db")[0]
+    df = optuna.load_study(study_name = os.path.basename(db_path).split(".db")[0], storage = f"sqlite:///{db_path}").trials_dataframe()
+    return df
 
 #%%
 def get_min_values(df):
@@ -51,45 +42,20 @@ def get_max_acc(df):
     return max_acc
 
 #%%
-
-# data_select_list = ["simulation_corr0.9", "simulation_corr0.8", "simulation_corr0.7"] # 
-# data_select_list = ["simulation_clusters4", "simulation_clusters8", "simulation_clusters16"] #,, "simulation_clusters4"
-data_select_list = ["simulation_high_symmetry", "simulation_medium_symmetry", "simulation_low_symmetry"] #,, "simulation_clusters4"
-title_list = ["high symmetry", "medium symmetry", "low symmetry"] # , "4 clusters"
-
-all_data = []
-for data_select, title in zip(data_select_list, title_list):
-    random, uniform, random_grid = get_data(data_select)
-    all_data.append((random, uniform, random_grid))
-
-# plot
-plt.figure(figsize=(10, 12))
-plt.suptitle("Comparison of different search strategies")
-
-n = len(data_select_list)
-for i in range(n):
-    plt.subplot(n, 1, i+1)
-    plt.title(title_list[i])
-    plt.plot(get_min_values(all_data[i][1]), label = "uniform with grid")
-    plt.plot(get_min_values(all_data[i][2]), label = "random with grid")
-    plt.plot(get_min_values(all_data[i][0]), label = "random with TPE")
-    plt.xlim(0, 100)
-    plt.ylim(0.0, 0.2)
-    plt.xlabel("Trial")
-    plt.ylabel("minimum GWD")
-    plt.grid(True)
-    plt.legend()
-plt.tight_layout()
-plt.show()
+things_random = get_data("THINGS", "random", "tpe")
+things_uniform = get_data("THINGS", "uniform", "grid") 
+things_random_grid = get_data("THINGS", "random", "grid")
 
 #%%
-things_random, things_uniform, things_random_grid = get_data("THINGS")
+allen_random = get_data("AllenBrain", "random", "tpe")
+allen_uniform = get_data("AllenBrain", "uniform", "grid") 
+allen_random_grid = get_data("AllenBrain", "random", "grid")
 
 #%%
-allen_random, allen_uniform, allen_random_grid = get_data("AllenBrain")
+dnn_random = get_data("DNN", "random", "tpe")
+dnn_uniform = get_data("DNN", "uniform", "grid") 
+dnn_random_grid = get_data("DNN", "random", "grid")
 
-#%%
-dnn_random, dnn_uniform, dnn_random_grid = get_data("DNN")
 
 # %%
 plt.figure(figsize=(10, 12))
@@ -124,6 +90,53 @@ plt.xlabel("Trial")
 plt.ylabel("minimum GWD")
 plt.grid(True)
 plt.legend()
+
+
+plt.tight_layout()
+plt.show()
+
+# %%
+min_allen = pd.DataFrame({"TPE + Random": allen_random["value"].min(), "Grid Search + Random": allen_random_grid["value"].min(), "Grid Search + Uniform": allen_uniform["value"].min()}, index = ["Minimum GWD"])
+# %%
+min_allen.plot(kind = "bar", rot = 0, title = "Minimum GWD for AllenBrain data")
+
+#%%
+def get_ot(df, init_plan, sampler_name):
+    idx = df[df["value"] == df["value"].min()].index[0]
+    print("acc.", df[df["value"] == df["value"].min()]["user_attrs_best_acc"].values[0])
+    npy_path = glob.glob(f"../results/AllenBrain/{sampler_name}/*/{init_plan}/*/gw_{idx}.npy")[0]
+    ot = np.load(npy_path)
+    
+    return ot
+
+#%%
+ot_random = get_ot(allen_random, "random", "tpe")
+ot_uniform = get_ot(allen_uniform, "uniform", "grid")
+ot_random_grid = get_ot(allen_random_grid, "random", "grid")
+
+
+# %%
+import seaborn as sns
+plt.figure(figsize=(10, 3.6))
+plt.suptitle("Neural data: Neuropixels visual coding in mice")
+
+plt.subplot(1, 3, 1)
+plt.title("TPE + Random")
+plt.imshow(ot_random, cmap="rocket_r")
+plt.xlabel("90 short movies of VISam (pseudo mouse A)")
+plt.ylabel("90 short movies of VISal (pseudo mouse B)")
+
+plt.subplot(1, 3, 2)
+plt.title("Grid Search + Random")
+plt.imshow(ot_random_grid, cmap="rocket_r")
+plt.xlabel("90 short movies of VISam (pseudo mouse A)")
+plt.ylabel("90 short movies of VISal (pseudo mouse B)")
+
+plt.subplot(1, 3, 3)
+plt.title("Grid Search + Uniform")
+plt.imshow(ot_uniform, cmap="rocket_r")
+plt.xlabel("90 short movies of VISam (pseudo mouse A)")
+plt.ylabel("90 short movies of VISal (pseudo mouse B)")
 
 
 plt.tight_layout()
