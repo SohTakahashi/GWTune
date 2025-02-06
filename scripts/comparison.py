@@ -98,7 +98,7 @@ plt.show()
 # %%
 min_allen = pd.DataFrame({"TPE + Random": allen_random["value"].min(), "Grid Search + Random": allen_random_grid["value"].min(), "Grid Search + Uniform": allen_uniform["value"].min()}, index = ["Minimum GWD"])
 # %%
-min_allen.plot(kind = "bar", rot = 0, title = "Minimum GWD for AllenBrain data")
+min_allen.plot(figsize = (8,6), kind = "bar", rot = 0, title = "Minimum GWD for AllenBrain data")
 
 #%%
 def get_ot(df, init_plan, sampler_name):
