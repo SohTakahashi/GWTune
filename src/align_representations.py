@@ -608,6 +608,10 @@ class Representation:
             mid_values = np.dot(diff_mat, inv_cov_matrix) * diff_mat
 
             sim_matrix = np.sqrt(np.sum(mid_values, axis = 2))
+        
+        # 高橋追加
+        elif self.metric == "cosine_similarity":
+            sim_matrix = np.dot(self.embedding, self.embedding.T) / (np.linalg.norm(self.embedding, axis=1, keepdims=True) * np.linalg.norm(self.embedding, axis=1, keepdims=True).T)
             
         else:
             sim_matrix = distance.cdist(self.embedding, self.embedding, metric=self.metric)
