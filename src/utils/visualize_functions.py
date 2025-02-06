@@ -332,6 +332,7 @@ def plot_embedding(
     alpha = kwargs.get('alpha', 1)
     fig_ext = kwargs.get('fig_ext', "png")
     dpi = kwargs.get('dpi', 300)
+    transparent = kwargs.get('transparent', False)
     
     if color_labels is None:
 
@@ -454,11 +455,15 @@ def plot_embedding(
         cbar.ax.tick_params(labelsize=xlabel_size)
         cbar.mappable.set_clim(colorbar_range[0], colorbar_range[1])
 
+    if transparent:
+        fig.patch.set_facecolor('none')
+        ax.set_facecolor('none')
+
     plt.tight_layout()
     
     if fig_dir is not None:
         fig_path = os.path.join(fig_dir, f"{fig_name}.{fig_ext}")
-        plt.savefig(fig_path, dpi=dpi, bbox_inches='tight')
+        plt.savefig(fig_path, dpi=dpi, bbox_inches='tight', transparent=transparent)
 
     if show_figure:
         plt.show()

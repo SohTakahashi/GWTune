@@ -221,6 +221,7 @@ class VisualizationConfig:
         lim_acc: Optional[float] = None,
         edgecolor:Optional[str] = None,
         linewidth:Optional[int] = None,
+        transparent:bool = False,
     ) -> None:
         """Initializes the VisualizationConfig class with specified visualization parameters.
 
@@ -319,6 +320,8 @@ class VisualizationConfig:
                 Color of the edge. Defaults to None.
             linewidth (Optional[int], optional):
                 Width of the line for the edge of plot. Defaults to None.
+            transparent (bool, optional):
+                Whether to make the figure transparent. Defaults to False.
         """
 
         self.visualization_params = {
@@ -373,6 +376,7 @@ class VisualizationConfig:
             'lim_acc':lim_acc,
             'edgecolor':edgecolor,
             'linewidth':linewidth,
+            'transparent':transparent,
         }
 
     def __call__(self) -> Dict[str, Any]:
@@ -429,7 +433,8 @@ class Representation:
             Defaults to None.
         save_conditional_rdm_path (str, optional):
             The path to save the conditional similarity matrix. Defaults to None.
-            If None, the conditional similarity matrix is not created. The conditional similarity matrix is saved in the "save_rdm_path/metric" for each metric.
+            If None, the conditional similarity matrix is not created. 
+            The conditional similarity matrix is saved in the "save_conditional_rdm_path/metric" for each metric.
     """
 
     def __init__(
@@ -462,7 +467,7 @@ class Representation:
         self.func_for_sort_sim_mat = func_for_sort_sim_mat
         
         # save the conditional similarity matrix. If None, the conditional similarity matrix is not created. 
-        # The conditional similarity matrix is saved in the "save_rdm_path/metric" for each metric.
+        # The conditional similarity matrix is saved in the "save_conditional_rdm_path/metric" for each metric.
         self.save_conditional_rdm_path = save_conditional_rdm_path
         
         # compute the dissimilarity matrix from embedding if sim_mat is None,
@@ -1798,30 +1803,32 @@ class AlignRepresentations:
     Attributes:
         config (OptimizationConfig):
             all the essential parameters for GWOT.
-            
-        data_name (str, optional):
-            The name of the folder to save the result for each pair. Defaults to "NoDefined".
-        metric (str, optional):
-            Please set the metric that can be used in "scipy.spatical.distance.cdist()". Defaults to "cosine".
+        pairwise_method (str):
+            The method to compute pairwise alignment. You can choose "combination" or "permutation". Defaults to "combination".
         representations_list (List[Representation]):
             List of Representation. used in the "combination" method.
         source_list (List[Representation]):
             List of source Representation. used in the "permutation" method.
         target_list (List[Representation]):
             List of target Representation. used in the "permutation" method.
-        histogram_matching (bool, optional):
+        histogram_matching (bool):
             This will adjust the histogram of target to that of source. Defaults to False.
-        main_results_dir (Optional[str], optional):
+        main_results_dir (Optional[str]):
             The main folder directory to save the results. Defaults to None.
-        main_pair_name (str):
-            Name identifier for the main representation pair. (Set internally)
-        main_file_name (str):
-            Filename identifier for the main results. (Set internally)
+        data_name (str):
+            The name of the folder to save the result for each pair. Defaults to "NoDefined".
+        metric (str):
+            The metric to compute the similarity matrix. Defaults to "cosine".
+        pairs_computed (Optional[List[str]]):
+            List of pairs that have been computed. Defaults to None.
+        specific_eps_list (Optional[dict]):
+            Dictionary to set specific eps_list for each representation. Defaults to None.
+        
         RSA_corr (dict):
             Dictionary to store RSA correlation values. (Set internally)
         name_list (List[str]):
             List of names from the provided representations.
-        all_pair_list (List[Tuple[int, int]]):
+        pairs_index_list (List[Tuple[int, int]]):
             All possible pairwise combinations of representations.
     """
 
@@ -2613,6 +2620,7 @@ class AlignRepresentations:
         legend: bool = True,
         fig_dir: Optional[str] = None,
         fig_name: str = "Aligned_embedding",
+        returned: str = "figure",
         **kwargs,
     ) -> Optional[Union[plt.Figure, List[np.ndarray]]]:
         """
@@ -2720,6 +2728,9 @@ class AlignRepresentations:
             fig_dir=fig_dir, 
             **visualization_config(),
         )
+        
+        if returned == "row_data":
+            return embedding_list
 
     def calc_barycenter(self, X_init=None):
         embedding_list = [representation.embedding for representation in self.representations_list]
